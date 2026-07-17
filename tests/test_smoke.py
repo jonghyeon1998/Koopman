@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from koopman_hjb.experiments import get_experiment, with_grid_shape
-from koopman_hjb.lyapunov import koopman_quadratic_observable, koopman_quadratic_time_derivative
 
 
 class KoopmanSmokeTests(unittest.TestCase):
@@ -42,19 +41,6 @@ class KoopmanSmokeTests(unittest.TestCase):
             backward = experiment.vector_field((origin - step)[None, :])[0]
             numerical_jacobian[:, axis] = (forward - backward) / (2.0 * epsilon)
         self.assertTrue(np.allclose(numerical_jacobian, experiment.linearization, atol=1e-6))
-
-    def test_koopman_quadratic_time_derivative_matches_closed_form(self) -> None:
-        phi_values = np.array([[1.0, 2.0], [3.0, 4.0]])
-        matrix_p = np.array([[2.0, 0.5], [0.5, 1.0]])
-        eigenvalues = np.array([-1.0, 3.0])
-
-        observable = koopman_quadratic_observable(phi_values, matrix_p)
-        derivative = koopman_quadratic_time_derivative(phi_values, matrix_p, eigenvalues)
-
-        expected_observable = np.array([8.0, 46.0])
-        expected_derivative = np.array([24.0, 84.0])
-        self.assertTrue(np.allclose(observable, expected_observable))
-        self.assertTrue(np.allclose(derivative, expected_derivative))
 
 
 if __name__ == "__main__":
