@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 
 import nbformat as nbf
 
@@ -10,11 +11,11 @@ EXPERIMENTS_DIR = ROOT / "experiments"
 
 
 def markdown_cell(text: str):
-    return nbf.v4.new_markdown_cell(text.strip() + "\n")
+    return nbf.v4.new_markdown_cell(dedent(text).strip() + "\n")
 
 
 def code_cell(source: str):
-    return nbf.v4.new_code_cell(source.strip() + "\n")
+    return nbf.v4.new_code_cell(dedent(source).strip() + "\n")
 
 
 SETUP_CELL = """
@@ -60,6 +61,10 @@ def build_first_analytic() -> nbf.NotebookNode:
         code_cell(
             """
             from koopman_hjb.experiments import get_experiment
+            from koopman_hjb.lyapunov import (
+                koopman_quadratic_observable,
+                koopman_quadratic_time_derivative,
+            )
             from koopman_hjb.plotting import plot_comparison_surfaces
 
             experiment = get_experiment("first_analytic")
@@ -70,11 +75,16 @@ def build_first_analytic() -> nbf.NotebookNode:
         markdown_cell("## Learned Eigenfunctions"),
         code_cell(
             """
+            learned_fields = {}
+            eigenvalues = []
+
             for spec in experiment.eigenfunctions:
                 model = experiment.fit(spec.key)
                 learned = experiment.evaluate_on_grid(model)
                 truth = experiment.true_on_grid(spec.key)
                 error = experiment.relative_error_on_grid(spec.key, learned)
+                learned_fields[spec.key] = learned
+                eigenvalues.append(spec.eigenvalue)
 
                 print(
                     f"{spec.title}: mean relative error = {error.mean():.3e}, "
@@ -82,6 +92,55 @@ def build_first_analytic() -> nbf.NotebookNode:
                 )
                 plot_comparison_surfaces(x_mesh, y_mesh, learned, truth, error, spec.title)
                 plt.show()
+            """
+        ),
+        markdown_cell(
+            r"""
+            ## Quadratic Observable and $\dot{V}(x)$
+
+            This notebook now computes $\dot{V}(x)$ from the learned Koopman eigenfunctions
+            using
+
+            $$
+            \dot{V}(x)=\sum_{i,j=1}^{d} P_{ij}(\lambda_i+\lambda_j)\phi_i(x)\phi_j(x),
+            $$
+
+            rather than explicitly differentiating the learned eigenfunctions.
+            """
+        ),
+        code_cell(
+            r"""
+            P_matrix = np.eye(len(experiment.eigenfunctions))
+            phi_stack = np.stack(
+                [learned_fields[spec.key] for spec in experiment.eigenfunctions],
+                axis=-1,
+            )
+            eigenvalues = np.asarray(eigenvalues, dtype=float)
+
+            V_values = koopman_quadratic_observable(phi_stack, P_matrix)
+            V_dot_values = koopman_quadratic_time_derivative(
+                phi_stack,
+                P_matrix,
+                eigenvalues,
+            )
+
+            figure, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)
+            panels = (
+                (axes[0], V_values, r"Quadratic observable $V(x)$", "viridis"),
+                (
+                    axes[1],
+                    V_dot_values,
+                    r"Time derivative $\dot{V}(x)$ from eigenvalues",
+                    "coolwarm",
+                ),
+            )
+            for axis, values, title, color_map in panels:
+                color = axis.pcolormesh(x_mesh, y_mesh, values, shading="auto", cmap=color_map)
+                axis.set_title(title)
+                axis.set_xlabel(r"$x_1$")
+                axis.set_ylabel(r"$x_2$")
+                figure.colorbar(color, ax=axis)
+            plt.show()
             """
         ),
     ]
